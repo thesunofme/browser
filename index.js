@@ -97,7 +97,7 @@ const run = async () => {
           process.exit(1);
         }
       }
-    }, 999000);
+    }, 10000);
 
   } catch (error) {
     console.log(`[${retries}] Miner Restart: `, error.message);
