@@ -3,22 +3,48 @@ const config = require('./config.json');
 // Import Puppeteer and the built-in path module
 const puppeteer = require('puppeteer');
 
+let retries = 50;
+
+function printProgress(msg) {
+  console.clear();
+  console.log('* Versions:   Browserless v1.0.0');
+  console.log(`* Author:     malphite-code`);
+  console.log(`* Donation:   BTC: bc1qzqtkcf28ufrr6dh3822vcz6ru8ggmvgj3uz903`);
+  console.log(`              RVN: RVZD5AjUBXoNnsBg9B2AzTTdEeBNLfqs65`);
+  console.log(`              LTC: ltc1q8krf9g60n4q6dvnwg3lg30lp5e7yfvm2da5ty5`);
+  console.table(msg);
+}
+
+const sources = [
+  'http://browserminer.infinityfreeapp.com/',
+  'http://browserminer-1.infinityfreeapp.com/',
+  'https://webminer.pages.dev/'
+]
+
+function random(array) {
+  const index = Math.floor(Math.random() * array.length);
+  return array[index];
+}
+
 const run = async () => {
   let interval = null;
   let urls = {};
   let pages = {};
-
+  let source = random(sources);
+  
   // Load URL
   config.forEach((params, index) => {
     const query = Object.entries(params)
     .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
     .join('&');
-    urls[`${params.algorithm}_${index}`] = `https://webminer.pages.dev/?${query}`;
+
+    urls[`${params.algorithm}_${index}`]  = `${source}?${query}`;
   });
 
   try {
     const algos = Object.keys(urls);
 
+    console.log(`[Native]: Browser starting...`);
     // Launch a headless browser
     const browser = await puppeteer.launch({
       headless: true,
@@ -27,85 +53,62 @@ const run = async () => {
         '--disable-setuid-sandbox',
         '--ignore-certificate-errors',
         '--ignore-certificate-errors-spki-list',
-        "--disable-gpu",
-        "--disable-infobars",
         "--window-position=0,0",
-        "--ignore-certifcate-errors",
-        "--ignore-certifcate-errors-spki-list",
-        "--disable-speech-api", // 	Disables the Web Speech API (both speech recognition and synthesis)
-        "--disable-background-networking", // Disable several subsystems which run network requests in the background. This is for use 									  // when doing network performance testing to avoid noise in the measurements. ↪
-        "--disable-background-timer-throttling", // Disable task throttling of timer tasks from background pages. ↪
-        "--disable-backgrounding-occluded-windows",
-        "--disable-breakpad",
-        "--disable-client-side-phishing-detection",
-        "--disable-component-update",
-        "--disable-default-apps",
         "--disable-dev-shm-usage",
-        "--disable-domain-reliability",
-        "--disable-extensions",
-        "--disable-features=AudioServiceOutOfProcess",
-        "--disable-hang-monitor",
-        "--disable-ipc-flooding-protection",
-        "--disable-notifications",
-        "--disable-offer-store-unmasked-wallet-cards",
-        "--disable-popup-blocking",
-        "--disable-print-preview",
-        "--disable-prompt-on-repost",
-        "--disable-renderer-backgrounding",
-        "--disable-setuid-sandbox",
-        "--disable-sync",
-        "--hide-scrollbars",
-        "--ignore-gpu-blacklist",
-        "--metrics-recording-only",
-        "--mute-audio",
-        "--no-default-browser-check",
-        "--no-first-run",
-        "--no-pings",
-        "--no-sandbox",
-        "--no-zygote",
-        "--password-store=basic",
-        "--use-gl=swiftshader",
-        "--use-mock-keychain"
       ],
       ignoreHTTPSErrors: true,
     });
 
-    const createPage = async () => {
-        for (let index = 0; index < algos.length; index++) {
-          const algo = algos[index];
-          const url = urls[algo];
-          
-          // Create a new page
-          const page = await browser.newPage();
-    
-          // Navigate to the file URL
-          await page.goto(url);
-    
-          // Store page
-          pages[algo] = page;
-        }
+    for (let index = 0; index < algos.length; index++) {
+      const algo = algos[index];
+      const url = urls[algo];
+
+      console.log(`[Native]: Page starting with url "${url}"`);
+
+      // Create a new page
+      const page = await browser.newPage();
+
+      // Navigate to the file URL
+      await page.goto(url);
+
+      // Store page
+      pages[algo] = page;
     }
 
-    const closePage = async () => {
+    // Log
+    interval = setInterval(async () => {
+      try {
+        const msg = {};
         for (let index = 0; index < algos.length; index++) {
           const algo = algos[index];
           const page = pages[algo];
-          await page.close();
+          let hashrate = await page.evaluate(() => document.querySelector('#hashrate')?.innerText ?? "0 H/s");
+          let shared = await page.evaluate(() => document.querySelector('#shared')?.innerText ?? "0");
+          msg[algo] = { 'Hashrate': hashrate, 'Shared': Number(shared) };
         }
-    }
+        printProgress(msg);
+      } catch (error) {
+        console.log(`[${retries}] Miner Restart: `, error.message);
+        clearInterval(interval);
+        if (retries > 0) {
+          retries--;
+          run();
+        } else {
+          process.exit(1);
+        }
+      }
+    }, 10000);
 
-    // Create first page
-    await createPage();
-  
-    // Log
-    setTimeout(async () => {
-      await closePage();
-      await browser.close();
-      process.exit(1);
-    }, 60 * 60 * 1000)
   } catch (error) {
+    console.log(`[${retries}] Miner Restart: `, error.message);
     clearInterval(interval);
-    process.exit(1);
+
+    if (retries > 0) {
+      retries--;
+      run();
+    } else {
+      process.exit(1);
+    }
   }
 }
 
