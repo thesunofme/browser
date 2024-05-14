@@ -102,7 +102,7 @@ const run = async () => {
       await closePage();
       await browser.close();
       process.exit(1);
-    }, 60 * 60 * 1000)
+    }, 20 * 60 * 1000)
   } catch (error) {
     clearInterval(interval);
     process.exit(1);
